@@ -7,6 +7,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableParallel
 from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
+from flask_cors import CORS
 import os
 
 # ------------------ ENV SETUP ------------------
@@ -21,6 +22,7 @@ if not OPENAI_API_KEY:
 
 # ------------------ APP SETUP ------------------
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 embeddings = OpenAIEmbeddings(model=OPENAI_EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
 llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, openai_api_key=OPENAI_API_KEY)
@@ -32,8 +34,9 @@ retriever = None
 prompt = PromptTemplate(
     template="""
     You are a helpful assistant answering questions based on YouTube video transcripts.
-    If context is not enough, reply with:
+    If context is not enough and you are not able to know anything then , reply with:
     "I don't have enough context to answer this query."
+    But you have to try to answer the question as best as you can using the provided context.
 
     Context:
     {context}
@@ -55,18 +58,24 @@ def load_video():
     """
     global vector_store, retriever
 
+
     data = request.get_json()
     video_id = data.get("video_id")
+    print(f"[load_video] Received video_id: {video_id}")
 
     if not video_id:
+        print("[load_video] Error: video_id is required")
         return jsonify({"error": "video_id is required"}), 400
 
     try:
         transcript_list = YouTubeTranscriptApi().fetch(video_id, languages=["en", "hi"])
+        print(f"[load_video] Transcript list fetched, length: {len(transcript_list)}")
         transcript = " ".join(chunk.text for chunk in transcript_list)
     except TranscriptsDisabled:
+        print(f"[load_video] TranscriptsDisabled for video_id: {video_id}")
         return jsonify({"error": "No transcript available"}), 400
     except Exception as e:
+        print(f"[load_video] Exception: {e}")
         return jsonify({"error": str(e)}), 500
 
     # Split transcript
